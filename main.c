@@ -45,6 +45,12 @@ struct systick {
 };
 #define SYSTICK ((struct systick*) 0xE000E010)
 
+struct lp_uart {
+	volatile uint32_t LPUART_CR1, LPUART_CR2, LPUART_CR3, LPUART_BRR, RESERVED, RESERVED, LPUART_RQR, LPUART_ISR, LPUART_ICR, LPUART_RDR, LPUART_TDR, LPUART_PRESC
+};
+
+#define LP_UART ((struct lp_uart*) 0x40008000)
+
 
 //enum values datasheet specific
 enum { GPIO_MODE_INPUT, GPIO_MODE_OUTPUT, GPIO_MODE_AF, GPIO_MODE_ANALOG };
@@ -54,7 +60,24 @@ static inline void gpio_set_mode(uint16_t pin, uint8_t mode) {
 	int n = PINNO(pin);
 	gpio->MODER &= ~(3U <<(n*2));
 	gpio->MODER |= (mode & 3) << (n * 2);
+	RCC->AHB2ENR |= BIT(PINBANK(pin));
 }
+static inline gpio_set_af(uint16_t pin, uint8_t af_num){
+	struct gpio* gpio = GPIO(PINBANK(pin));
+	int n = PINNO(pin);
+	gpio->AFR[n >> 3] &= ~(15UL ((n & 7) * 4));
+	gpio->AFR[n >> 3] |= ((uint32_t) af_num) << ((n & 7) * 4);
+
+}
+
+#define FREQ 16000000 // CPU Frequency 16MHz
+static inline void uart_init(struct uart* uart, unsigned long baud) {
+	uint8_t af = 7;
+	uint16_t rx = 0, tx = 0;	
+	RCC->APB1ENR2 |= BIT(4);
+
+}
+
 static inline void gpio_write(uint16_t pin, bool val){
 	struct gpio* gpio = GPIO(PINBANK(pin));
  	gpio->BSRR = (1U << PINNO(pin)) << (val ? 0 : 16);
@@ -80,17 +103,16 @@ bool timer_expired(uint32_t* t, uint32_t prd, uint32_t now) {
 	if(now + prd < *t) *t = 0; //reset timer if the time has wrapped
 	if(*t == 0) *t = now + prd; // set the timer if first poll
 	if(*t > now) return false; // not expired yet
-	*t = (now - *t) > prd ? now + prd : *t + prd; // calculate the 
+	*t = (now - *t) > prd ? now + prd : *t + prd; // if timer expired return true and add the period to the timer
 	return true;
 
 }
 
 int main(void) {
 	uint16_t led = PIN('A',5);
-	RCC->AHB2ENR |= BIT(PINBANK(led));
 	systick_init(16000000 / 1000);
 	gpio_set_mode(led, GPIO_MODE_OUTPUT);
-	uint32_t timer, period = 1000;
+	uint32_t timer, period = 5000;
  	for(;;){
 		if(timer_expired(&timer, period, s_ticks)) {
 			static bool on;
